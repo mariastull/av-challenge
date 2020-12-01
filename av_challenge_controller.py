@@ -3,6 +3,7 @@
 from controller import Camera
 from vehicle import Driver
 
+DEBUG_FLAG = True
 
 driver = Driver()
 
@@ -10,39 +11,60 @@ timestep = int(driver.getBasicTimeStep())
 
 lidar = driver.getLidar('Sick LMS 291')
 lidar.enable(timestep)
-# print("Field of view", lidar.getFov())
-# print("Dimension", lidar.getHorizontalResolution())
 
+# NOTE: only tested with w: 256, h: 128 camera
 front_camera = driver.getCamera("front_camera")
-# rear_camera = driver.getCamera("rear_camera")
 front_camera.enable(10)
+
+# rear_camera = driver.getCamera("rear_camera")
 # rear_camera.enable(30)
 
+CAM_WIDTH = front_camera.getWidth()
+CAM_HEIGHT = front_camera.getHeight()
+CAM_CENTER = int(CAM_WIDTH/2)
+
+# Window: 8 pixels either side of center of frame 
+# used to detect if white line is in center of camera view
+CAM_CENTER_MIN = CAM_CENTER - 8
+CAM_CENTER_MAX = CAM_CENTER + 8
+
+# Window: 80 pixels around center 
+# used to look for white line if we think we know where it is
+NARROW_XMIN = CAM_CENTER - 40
+NARROW_XMAX = CAM_CENTER + 40
+
+if DEBUG_FLAG:
+    print("Camera dimensions", "width:", CAM_WIDTH, "height:", CAM_HEIGHT)
         
 
-# Adapted from Webots av example
+# Adapted from Webots AV example
+# x_min and x_max defines which part of the image we're looking at
+# (usually a band around the center, unless we lost the white line)
 def line_angle(x_min, x_max):
-    width = front_camera.getWidth()
-    height = front_camera.getHeight()
-    fov = front_camera.getFov()
 
     image = front_camera.getImageArray()
     
     pixel_count = 0
     sumx = 0
-    
+   
     for x in range(x_min, x_max):
-        for y in range (int (height/2), height): # look for white in bottom half of the image
+        # Only looking at bottom 1/3 of image 
+        # where the road is likely to be and we have decent image fidelity
+        for y in range (int (2*CAM_HEIGHT/3), CAM_HEIGHT):
+            
+            # Is this pixel white?
             if (image[x][y][0] + image[x][y][1] + image[x][y][2] > 350 ) and (image[x][y][0] > 200 or image[x][y][1] > 200 or image[x][y][2] > 200):
-            # if image[x][y][0] > 195 and image[x][y][1] > 195 and image[x][y][2] > 195:
-                print x, y, image[x][y][0], image[x][y][1], image[x][y][2]
+                if DEBUG_FLAG:
+                    print("white pixel at x:", x, "y:", y, "RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
                 sumx +=x
                 pixel_count += 1
-
-    print "avgs", min_color, max_color, float(sum_color)/num_pixels
-    if pixel_count <= 1:
+    
+    # We haven't found white pixels
+    if pixel_count <= 1: 
         return -1
-    print(sumx, pixel_count, width, fov)
+        
+    if DEBUG_FLAG:
+        print("total white pixels:", pixel_count, "avg x coordinate: ", sumx/pixel_count)
     return (float(sumx) / pixel_count)
 
 def getLidarReading():
@@ -50,16 +72,23 @@ def getLidarReading():
     center_clear = 0
     right_clear = 0
     left_clear = 0
+    
+    # 0-79 degrees: right side of image
     for i in range(20, 79):
         if image[i] > 15 and image[i] < 80: 
             right_clear += 1
+    # 79-100 degrees: center of image
     for i in range(79, 100):
         if image[i] > 15: 
             center_clear += 1
+    
+    # 100 to 160 degrees: left side of image
     for i in range (100, 160):
         if image[i] > 15 and image[i] < 80: 
             left_clear += 1
-    print "center", center_clear, "right", right_clear, "left", left_clear
+            
+    if DEBUG_FLAG:
+        print ("lidar results: center", center_clear, "right", right_clear, "left", left_clear)
     if center_clear > 18:
         return "center"
     if right_clear > left_clear:
@@ -70,83 +99,98 @@ def getLidarReading():
 
    
 def main():
+
     count = 0
-    prev_width = 65
-    min_x = 44
-    max_x = 84
-    PID_need_reset = False
+    
+    min_x = NARROW_XMIN
+    max_x = NARROW_XMAX
+    
     driver.setCruisingSpeed(50)
-    driver.setGear(1)
-    driver.setThrottle(1)
-    prev_angle = 64
+
+    prev_x_coord = CAM_CENTER
     
     while driver.step() != -1:
         count += 1
         if count % 10 == 0:
-            print("speed", driver.getCurrentSpeed())
-            angle = line_angle(min_x, max_x)
-            print("angle", angle)
-            if angle == -1: # can't find the line
+            
+            x_coord = line_angle(min_x, max_x)
+            
+            if DEBUG_FLAG:
+                print("speed", driver.getCurrentSpeed())
+                print("x-coord", x_coord)
+            
+            # can't find the line, slow down
+            if x_coord == -1: 
                 driver.setCruisingSpeed(1)
-                if prev_angle == -1: # really can't find the line
-                    driver.setCruisingSpeed(0) # come to a complete halt before lidar reading
+                
+                # Really lost: can't find the line
+                if prev_x_coord == -1: 
+                    # Try to come to a complete halt before lidar reading
+                    driver.setCruisingSpeed(0)
                     for i in range(5):
                         driver.step()
-                    print ("should be stopped", driver.getCurrentSpeed())
-                # driver.setBrakeIntensity(.4)
+                    if DEBUG_FLAG:
+                        print ("Tried to stop, taking lidar reading", driver.getCurrentSpeed())
+                
+                # Since we can't find the white line, widen search field
                 min_x = 0
-                max_x = 128
+                max_x = CAM_WIDTH
+                
                 result = getLidarReading()
                 if result == "center":
-                    print("lidar clear ahead")
+                    if DEBUG_FLAG:
+                        print("lidar clear ahead")
                     driver.setSteeringAngle(0)
                     driver.setCruisingSpeed(20)
-                    # driver.setThrottle(.5)
-                elif prev_angle == -1:
+                    
+                elif prev_x_coord == -1:
                     if result == "right":
-                        print("lidar right")
+                        if DEBUG_FLAG:
+                            print("lidar right")
                         driver.setSteeringAngle(.05)
                         driver.setCruisingSpeed(5)
                     if result == "left":
-                        print("lidar left")
+                        if DEBUG_FLAG:
+                            print("lidar left")
                         driver.setSteeringAngle(-.05)
                         driver.setCruisingSpeed(5)
             else:
-                if (angle > 60 and angle < 68): # straightaway
-                    min_x = 44
-                    max_x = 84
+                # White line is in the center of our camera; we're going the right direction
+                if (x_coord > CAM_CENTER_MIN and x_coord < CAM_CENTER_MAX):
+                    # Narrow search field, since we know where the white line is 
+                    min_x = NARROW_XMIN
+                    max_x = NARROW_XMAX
+                    
                     if driver.getCurrentSpeed() < 30:
                         driver.setCruisingSpeed(50)
-                        # driver.setThrottle(1)
+                        # Stop turning
                         driver.setSteeringAngle(0)
                 else:
-                    steering_angle = ((angle - 64) / 64 / (3.1415/2))
-                    print("steering", steering_angle)
-                    # driver.setBrakeIntensity(.4)
-                    driver.setSteeringAngle(steering_angle)
-                    # driver.setThrot tle(.8)
-                    driver.setCruisingSpeed(25)
-                    for i in range(21):
-                        driver.step()
-                    angle_after_turn = line_angle(min_x, max_x)
-                    print(angle, angle_after_turn)
-                    # if angle_after_turn == -1:
-                        # driver.step()
-                    # 
-                    # if abs(angle_after_turn - 64) < abs(angle - 64):
-                        # print "turn made things better"
-                    # else:
-                        # print "turn made things worse"
+                    # We found the white line, and it's not in the center; we need to turn
+                    min_x = 0
+                    max_x = CAM_WIDTH
                     
-                                            
-            prev_angle = angle
+                    # Calculate steering angle
+                    # Distance from center / center
+                    # Divided by pi/2, because a) we assume the line is in front of us
+                    # and b) it makes turns more gentle, we don't want to turn the wheels 90 degrees
+                    steering_angle = ((x_coord - CAM_CENTER) / (CAM_WIDTH/2) / (3.1415/2))
+                    
+                    if DEBUG_FLAG: 
+                        print("turning", steering_angle)
+                    
+                    driver.setSteeringAngle(steering_angle)
+                    driver.setCruisingSpeed(20)
+                    
+                    # Commit to a turn; don't try to readjust before making some progress through turn
+                    # Important because camera image shifts a lot during turns
+                    for i in range(25):
+                        driver.step()
+               
+                    
+            prev_x_coord = x_coord
             
-            # if angle == -1:
-                # PID_need_reset = True
-            # steer_angle = applyPID(angle, PID_need_reset)
-            # print (angle, steer_angle)
-          
-            # driver.setSteeringAngle(steer_angle)
+            
      
 
 
