@@ -1,202 +1,161 @@
 """av_challenge_controller controller."""
 
-# You may need to import some classes of the controller module. Ex:
-# from controller import Robot, Motor, DistanceSensor
-from controller import Robot, Camera, Motor, DistanceSensor
-# import controller
-import sys
-
-# print(controller.__file__)
-
-print("Python version")
-print (sys.version)
-
-
-# from controller import DistanceSensor, Robot
+from controller import Camera
 from vehicle import Driver
-# from controller import DistanceSensor
-
-
-
-
-
-# create the Robot instance.
-# robot = Robot()
-# front_camera = robot.getCamera("front_camera")
-# rear_camera = robot.getCamera("rear_camera")
-
-# get the time step of the current world.
-# timestep = int(robot.getBasicTimeStep())
-
-
-# You should insert a getDevice-like function in order to get the
-# instance of a device of the robot. Something like:
-# motor = robot.getMotor('motor')
-# print(type(motor))
-# motor.setPosition(float('inf'))
-# motor.setVelocity(100)
-# ds = robot.getLidar('Sick LMS 291')
-# ds.enable(timestep)
 
 
 driver = Driver()
-driver.setCruisingSpeed(50)
-lidar = driver.getLidar('Sick LMS 291')
+
 timestep = int(driver.getBasicTimeStep())
+
+lidar = driver.getLidar('Sick LMS 291')
 lidar.enable(timestep)
-# print("banana")
+# print("Field of view", lidar.getFov())
+# print("Dimension", lidar.getHorizontalResolution())
 
-print(type(lidar))
-print("Field of view", lidar.getFov())
-print("Dimension", lidar.getHorizontalResolution())
-print(timestep)
-
-
-# front_camera.enable(30)
+front_camera = driver.getCamera("front_camera")
+# rear_camera = driver.getCamera("rear_camera")
+front_camera.enable(10)
 # rear_camera.enable(30)
 
-RIGHT_MIN = 0
-RIGHT_MAX = 20
-DOWN_RIGHT_MIN = 20
-DOWN_RIGHT_MAX = 40
-MID_RIGHT_MIN = 40
-MID_RIGHT_MAX = 60
-F_RIGHT_MIN = 60
-F_RIGHT_MAX = 80
-CENTER_MIN = 80
-CENTER_MAX = 100
-F_LEFT_MIN = 100
-F_LEFT_MAX = 120
-MID_LEFT_MIN = 120
-MID_LEFT_MAX = 140
-DOWN_LEFT_MIN = 140
-DOWN_LEFT_MAX = 160
-LEFT_MIN = 160
-LEFT_MAX = 179
-
-# Main loop:
-# - perform simulation steps until Webots is stopping the controller
-# while robot.step(timestep) != -1:
-count = 0
-right_turn_count = 0
-center_clear_count = 0
-left_turn_count = 0 
-while driver.step() != -1:
-    count += 1
-    # Read the sensors:
-    # Enter here functions to read sensor data, like:
-     # val = ds.getValue()
-    if count % 20 == 0:
-        print driver.getCurrentSpeed()
-        val = lidar.getRangeImage()
         
-        right_obstacle = False
-        down_right_obstacle = False
-        mid_right_obstacle= False
-        front_right_obstacle = False
-        center_obstacle = False
-        front_left_obstacle = False
-        mid_left_obstacle = False
-        down_left_obstacle = False
-        left_obstacle = False
-        
-        print("Reading")
-        for i in range(CENTER_MIN, CENTER_MAX):
-            if val[i] < 20:
-                center_obstacle = True
-        for i in range(RIGHT_MIN, RIGHT_MAX):
-            if val[i] < 20:
-                right_obstacle = True
-        for i in range(DOWN_RIGHT_MIN, DOWN_RIGHT_MAX):
-            if val[i] < 20:
-                down_right_obstacle = True
-        for i in range(MID_RIGHT_MIN, MID_RIGHT_MAX):
-            if val[i] < 20:
-                mid_right_obstacle = True
-        for i in range(F_RIGHT_MIN, F_RIGHT_MAX):
-            if val[i] < 20:
-                front_right_obstacle = True
-        for i in range(LEFT_MIN, LEFT_MAX):
-            if val[i] < 20:
-                left_obstacle = True
-        for i in range(F_LEFT_MIN, F_LEFT_MAX):
-            if val[i] < 20:
-                front_left_obstacle = True
-        for i in range(DOWN_LEFT_MIN, DOWN_LEFT_MAX):
-            if val[i] < 20:
-                down_left_obstacle = True
-        for i in range(MID_LEFT_MIN, MID_LEFT_MAX):
-            if val[i] < 20:
-                mid_left_obstacle = True
-        if center_obstacle:
-            print("center obstacle detected.")
-            # print val
-        if right_obstacle:
-            print("right obstacle detected.")
-        if down_right_obstacle:
-            print("down right obstacle detected")
-        if mid_right_obstacle:
-            print("mid right obstacle detected")
-        if front_right_obstacle:
-            print("front right obstacle detected.")
-        if front_left_obstacle:
-            print("front left obstacle_detected.")
-        if mid_left_obstacle:
-            print("mid left obstacle detected")
-        if down_left_obstacle:
-            print("down left obstacle detected")
-        if left_obstacle: 
-            print("left obstacle detected.")
-        if right_turn_count > 3:
-            print("Turning right")
-            driver.setSteeringAngle(.25) 
-            driver.setCruisingSpeed(10)
-            if not center_obstacle or not front_left_obstacle:
-                print("no center obstacle")
-                # print val
-                center_clear_count += 1
-                if center_clear_count > 1:
-                    right_turn_count = 0
-                    driver.setSteeringAngle(0)
-                    driver.setCruisingSpeed(30)
-                continue
-            elif center_obstacle:
-                print("still a center obstacle")
-                continue
-        if left_turn_count > 3:
-            print("Turning left")
-            driver.setSteeringAngle(-.25) 
-            driver.setCruisingSpeed(10)
-            if not center_obstacle or not front_right_obstacle:
-                print("no center obstacle")
-                # print val
-                center_clear_count += 1
-                if center_clear_count > 1:
-                    left_turn_count = 0
-                    driver.setSteeringAngle(0)
-                    driver.setCruisingSpeed(30)
-            elif center_obstacle:
-                print("still a center obstacle")
-                continue
-        if center_obstacle:
-            print("slowing down for center obstacle.")
-            # print val
-            driver.setCruisingSpeed(5)
-        if center_obstacle and (not left_obstacle or not down_left_obstacle or not mid_left_obstacle or not front_left_obstacle):
-            left_turn_count += 1
-            right_turn_count = 0
-        if center_obstacle and (not right_obstacle or not down_right_obstacle or not mid_right_obstacle or not front_right_obstacle):
-            right_turn_count += 1
-            left_turn_count = 0
-            # driver.setSteeringAngle(.25) 
-            # driver.setCruisingSpeed(10)
-        # if not center_obstacle and driver.getCurrentSpeed()<5:
-            # driver.setCruisingSpeed(20)
-        # print(val[0], val[10], val[20], val[89], val[159], val[169], val[179])
 
+# Adapted from Webots av example
+def line_angle(x_min, x_max):
+    width = front_camera.getWidth()
+    height = front_camera.getHeight()
+    fov = front_camera.getFov()
+
+    image = front_camera.getImageArray()
+    
+    pixel_count = 0
+    sumx = 0
+    
+    for x in range(x_min, x_max):
+        for y in range (int (height/2), height): # look for white in bottom half of the image
+            if (image[x][y][0] + image[x][y][1] + image[x][y][2] > 350 ) and (image[x][y][0] > 200 or image[x][y][1] > 200 or image[x][y][2] > 200):
+            # if image[x][y][0] > 195 and image[x][y][1] > 195 and image[x][y][2] > 195:
+                print x, y, image[x][y][0], image[x][y][1], image[x][y][2]
+                sumx +=x
+                pixel_count += 1
+
+    print "avgs", min_color, max_color, float(sum_color)/num_pixels
+    if pixel_count <= 1:
+        return -1
+    print(sumx, pixel_count, width, fov)
+    return (float(sumx) / pixel_count)
+
+def getLidarReading():
+    image = lidar.getRangeImage()
+    center_clear = 0
+    right_clear = 0
+    left_clear = 0
+    for i in range(20, 79):
+        if image[i] > 15 and image[i] < 80: 
+            right_clear += 1
+    for i in range(79, 100):
+        if image[i] > 15: 
+            center_clear += 1
+    for i in range (100, 160):
+        if image[i] > 15 and image[i] < 80: 
+            left_clear += 1
+    print "center", center_clear, "right", right_clear, "left", left_clear
+    if center_clear > 18:
+        return "center"
+    if right_clear > left_clear:
+        return "right"
+    else:
+        return "left"
+        
+
+   
+def main():
+    count = 0
+    prev_width = 65
+    min_x = 44
+    max_x = 84
+    PID_need_reset = False
+    driver.setCruisingSpeed(50)
+    driver.setGear(1)
+    driver.setThrottle(1)
+    prev_angle = 64
+    
+    while driver.step() != -1:
+        count += 1
+        if count % 10 == 0:
+            print("speed", driver.getCurrentSpeed())
+            angle = line_angle(min_x, max_x)
+            print("angle", angle)
+            if angle == -1: # can't find the line
+                driver.setCruisingSpeed(1)
+                if prev_angle == -1: # really can't find the line
+                    driver.setCruisingSpeed(0) # come to a complete halt before lidar reading
+                    for i in range(5):
+                        driver.step()
+                    print ("should be stopped", driver.getCurrentSpeed())
+                # driver.setBrakeIntensity(.4)
+                min_x = 0
+                max_x = 128
+                result = getLidarReading()
+                if result == "center":
+                    print("lidar clear ahead")
+                    driver.setSteeringAngle(0)
+                    driver.setCruisingSpeed(20)
+                    # driver.setThrottle(.5)
+                elif prev_angle == -1:
+                    if result == "right":
+                        print("lidar right")
+                        driver.setSteeringAngle(.05)
+                        driver.setCruisingSpeed(5)
+                    if result == "left":
+                        print("lidar left")
+                        driver.setSteeringAngle(-.05)
+                        driver.setCruisingSpeed(5)
+            else:
+                if (angle > 60 and angle < 68): # straightaway
+                    min_x = 44
+                    max_x = 84
+                    if driver.getCurrentSpeed() < 30:
+                        driver.setCruisingSpeed(50)
+                        # driver.setThrottle(1)
+                        driver.setSteeringAngle(0)
+                else:
+                    steering_angle = ((angle - 64) / 64 / (3.1415/2))
+                    print("steering", steering_angle)
+                    # driver.setBrakeIntensity(.4)
+                    driver.setSteeringAngle(steering_angle)
+                    # driver.setThrot tle(.8)
+                    driver.setCruisingSpeed(25)
+                    for i in range(21):
+                        driver.step()
+                    angle_after_turn = line_angle(min_x, max_x)
+                    print(angle, angle_after_turn)
+                    # if angle_after_turn == -1:
+                        # driver.step()
+                    # 
+                    # if abs(angle_after_turn - 64) < abs(angle - 64):
+                        # print "turn made things better"
+                    # else:
+                        # print "turn made things worse"
+                    
+                                            
+            prev_angle = angle
+            
+            # if angle == -1:
+                # PID_need_reset = True
+            # steer_angle = applyPID(angle, PID_need_reset)
+            # print (angle, steer_angle)
+          
+            # driver.setSteeringAngle(steer_angle)
+     
+
+
+
+main()
+        
     # Process sensor data here.
 
-    # Enter here functions to send actuator commands, like:
+    # Enter here functions t o send actuator commands, like:
      # motor.setPosition(10.0)
      # pass
 
