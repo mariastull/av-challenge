@@ -9,10 +9,14 @@ driver = Driver()
 
 timestep = int(driver.getBasicTimeStep())
 
-lidar = driver.getLidar('Sick LMS 291')
-lidar.enable(timestep)
+# lidar = driver.getLidar('Sick LMS 291')
+# lidar.enable(timestep)
 
-# NOTE: only tested with w: 256, h: 128 camera
+# accelerometer = driver.getAccelerometer("gyro")
+# accelerometer.enable(timestep)
+# print(type(accelerometer))
+
+
 front_camera = driver.getCamera("front_camera")
 front_camera.enable(10)
 
@@ -112,6 +116,8 @@ def main():
     while driver.step() != -1:
         count += 1
         if count % 10 == 0:
+            # accel_vals = accelerometer.getValues()
+            # print(accel_vals)
             
             x_coord = line_angle(min_x, max_x)
             
@@ -121,39 +127,20 @@ def main():
             
             # can't find the line, slow down
             if x_coord == -1: 
-                driver.setCruisingSpeed(1)
+                # 
+                driver.setBrakeIntensity(.3)
+                driver.setCruisingSpeed(15)
                 
                 # Really lost: can't find the line
                 if prev_x_coord == -1: 
-                    # Try to come to a complete halt before lidar reading
-                    driver.setCruisingSpeed(0)
-                    for i in range(5):
-                        driver.step()
-                    if DEBUG_FLAG:
-                        print ("Tried to stop, taking lidar reading", driver.getCurrentSpeed())
-                
+                     
+                    driver.setBrakeIntensity(.7)
+                    driver.setCruisingSpeed(1)
+                   
                 # Since we can't find the white line, widen search field
                 min_x = 0
                 max_x = CAM_WIDTH
                 
-                result = getLidarReading()
-                if result == "center":
-                    if DEBUG_FLAG:
-                        print("lidar clear ahead")
-                    driver.setSteeringAngle(0)
-                    driver.setCruisingSpeed(20)
-                    
-                elif prev_x_coord == -1:
-                    if result == "right":
-                        if DEBUG_FLAG:
-                            print("lidar right")
-                        driver.setSteeringAngle(.05)
-                        driver.setCruisingSpeed(5)
-                    if result == "left":
-                        if DEBUG_FLAG:
-                            print("lidar left")
-                        driver.setSteeringAngle(-.05)
-                        driver.setCruisingSpeed(5)
             else:
                 # White line is in the center of our camera; we're going the right direction
                 if (x_coord > CAM_CENTER_MIN and x_coord < CAM_CENTER_MAX):
@@ -162,7 +149,7 @@ def main():
                     max_x = NARROW_XMAX
                     
                     if driver.getCurrentSpeed() < 30:
-                        driver.setCruisingSpeed(50)
+                        driver.setCruisingSpeed(60)
                         # Stop turning
                         driver.setSteeringAngle(0)
                 else:
@@ -179,8 +166,13 @@ def main():
                     if DEBUG_FLAG: 
                         print("turning", steering_angle)
                     
+                    if abs(steering_angle) > .1:
+                        driver.setBrakeIntensity(.99)
+                        print("hard brake")
                     driver.setSteeringAngle(steering_angle)
                     driver.setCruisingSpeed(20)
+                    # if abs(steering_angle) < .1:
+                        # driver.setCruisingSpeed(40)
                     
                     # Commit to a turn; don't try to readjust before making some progress through turn
                     # Important because camera image shifts a lot during turns
