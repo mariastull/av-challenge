@@ -44,12 +44,17 @@ if DEBUG_FLAG:
 # Adapted from Webots AV example
 # x_min and x_max defines which part of the image we're looking at
 # (usually a band around the center, unless we lost the white line)
-def line_angle(x_min, x_max):
+# Returns the average x-coordinate of white pixels
+# or green pixels, if we're approaching the finish line
+def line_angle(x_min, x_max, printall=False):
 
     image = front_camera.getImageArray()
     
     pixel_count = 0
     sumx = 0
+    
+    green_sumx = 0
+    green_count = 0
    
     for x in range(x_min, x_max):
         # Only looking at bottom 1/3 of image 
@@ -62,13 +67,30 @@ def line_angle(x_min, x_max):
                     print("white pixel at x:", x, "y:", y, "RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
                 sumx +=x
                 pixel_count += 1
+            
+            # Looking for green pixels (finish line)
+            if image[x][y][1] > 200 and image[x][y][0] < 100 and image[x][y][2] < 100:
+                if DEBUG_FLAG:
+                    print("GREEN at x:", x, "y:", y ,"RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
+                green_sumx += x
+                green_count += 1
+    
+    # If we saw a lot of bright green pixels, we are approaching the finish line
+    # Aim for that
+    if green_count > 30:
+        if DEBUG_FLAG:
+            print("Green ahead:", float(green_sumx)/green_count)
+        return float(green_sumx)/green_count
+        
     
     # We haven't found white pixels
     if pixel_count <= 1: 
         return -1
-        
+    
     if DEBUG_FLAG:
         print("total white pixels:", pixel_count, "avg x coordinate: ", sumx/pixel_count)
+    
+    # Otherwise return the average x-coordinate of the white pixels 
     return (float(sumx) / pixel_count)
 
 def getLidarReading():
@@ -168,17 +190,27 @@ def main():
                     
                     if abs(steering_angle) > .1:
                         driver.setBrakeIntensity(.99)
-                        print("hard brake")
+                        # print("hard brake")
                     driver.setSteeringAngle(steering_angle)
                     driver.setCruisingSpeed(20)
                     # if abs(steering_angle) < .1:
                         # driver.setCruisingSpeed(40)
+                   
+                    
+                    # for i in range(25):
+                        # driver.step()
                     
                     # Commit to a turn; don't try to readjust before making some progress through turn
                     # Important because camera image shifts a lot during turns
-                    for i in range(25):
-                        driver.step()
-               
+                    # Every five steps, check to see if we have centered the white
+                    for i in range(5):
+                        for i in range(5):
+                            driver.step()
+                        new_angle = line_angle(0, CAM_WIDTH)
+                        if new_angle < CAM_CENTER_MAX and new_angle > CAM_CENTER_MIN:
+                            if DEBUG_FLAG:
+                                print("Ending the turn early.")
+                            break
                     
             prev_x_coord = x_coord
             
