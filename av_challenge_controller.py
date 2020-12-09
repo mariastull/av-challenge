@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import numpy as np
 
-DEBUG_FLAG = False
+DEBUG_FLAG = True
 DEBUG_FLAG_OBJ = False
 
 driver = Driver()
@@ -34,8 +34,8 @@ CAM_CENTER = int(CAM_WIDTH/2)
 
 # Window: 8 pixels either side of center of frame 
 # used to detect if white line is in center of camera view
-CAM_CENTER_MIN = CAM_CENTER - 8
-CAM_CENTER_MAX = CAM_CENTER + 8
+CAM_CENTER_MIN = CAM_CENTER - 2
+CAM_CENTER_MAX = CAM_CENTER + 2
 
 # Window: 80 pixels around center 
 # used to look for white line if we think we know where it is
@@ -61,7 +61,7 @@ def line_angle(x_min, x_max, printall=False):
     green_sumx = 0
     green_count = 0
    
-    for x in range(x_min, x_max):
+    for x in range(0, CAM_WIDTH):
         # Only looking at bottom 1/3 of image 
         # where the road is likely to be and we have decent image fidelity
         for y in range (int (2*CAM_HEIGHT/3), CAM_HEIGHT):
@@ -121,7 +121,7 @@ def objDetect():
                 
             else:
                 #pixel is likely sus
-                if DEBUG_FLAG:
+                if DEBUG_FLAG_OBJ:
                     print("sus pixel at x:", x, "y:", y, "RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
                 
                 sus_count += 1
@@ -132,7 +132,7 @@ def objDetect():
     if sus_count <= 1: 
         return -1
     
-    if DEBUG_FLAG:
+    if DEBUG_FLAG_OBJ:
         print("total sus pixels:", sus_count, "avg x coordinate: ", sumx/sus_count)
     
     # Otherwise return the average x-coordinate of the white pixels 
@@ -179,6 +179,7 @@ def main():
     
     driver.setCruisingSpeed(70)
 
+    x_coord = CAM_CENTER
     prev_x_coord = CAM_CENTER
     obj_xcors = []
 
@@ -225,7 +226,7 @@ def main():
                     max_x = NARROW_XMAX
                     
                     if driver.getCurrentSpeed() < 30:
-                        driver.setCruisingSpeed(70)
+                        driver.setCruisingSpeed(50)
                         # Stop turning
                         driver.setSteeringAngle(0)
                         driver.setBrakeIntensity(0)
@@ -270,6 +271,7 @@ def main():
                             break
      
         h_obj = objDetect()
+        # print(h_obj)
         
         if h_obj == -1:
             obj_xcors = []
@@ -279,6 +281,7 @@ def main():
         if (len(obj_xcors) >= 8) and (turning == False):
             #check that all xcors are increasing or decreasing
             if ((obj_xcors == sorted(obj_xcors)) or (obj_xcors == sorted(obj_xcors, reverse=True))) and (len(obj_xcors) == len(set(obj_xcors))):
+                print("object detected")
                 #should be an object there!!
                 print(obj_xcors)
                 driver.setCruisingSpeed(0)
