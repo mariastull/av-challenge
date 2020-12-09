@@ -2,15 +2,19 @@
 
 from controller import Camera
 from vehicle import Driver
+import warnings
+warnings.filterwarnings("ignore")
+import numpy as np
 
-DEBUG_FLAG = True
+DEBUG_FLAG = False
+DEBUG_FLAG_OBJ = False
 
 driver = Driver()
 
 timestep = int(driver.getBasicTimeStep())
 
-# lidar = driver.getLidar('Sick LMS 291')
-# lidar.enable(timestep)
+lidar = driver.getLidar('Sick LMS 291')
+lidar.enable(10)
 
 # accelerometer = driver.getAccelerometer("gyro")
 # accelerometer.enable(timestep)
@@ -19,6 +23,7 @@ timestep = int(driver.getBasicTimeStep())
 
 front_camera = driver.getCamera("front_camera")
 front_camera.enable(10)
+#front_camera.recognitionEnable(10)
 
 # rear_camera = driver.getCamera("rear_camera")
 # rear_camera.enable(30)
@@ -92,6 +97,46 @@ def line_angle(x_min, x_max, printall=False):
     
     # Otherwise return the average x-coordinate of the white pixels 
     return (float(sumx) / pixel_count)
+    
+def objDetect():
+
+    image = front_camera.getImageArray()
+    
+    pixel_count = 0
+    sus_count = 0
+    sumx = 0
+   
+    for x in range(22, 113):
+        # Only looking at bottom 1/3 of image 
+        # where the road is likely to be and we have decent image fidelity
+        for y in range (50, CAM_HEIGHT):
+            
+            # Is this pixel white?
+            if (image[x][y][0] + image[x][y][1] + image[x][y][2] > 350 ) and (image[x][y][0] > 200 or image[x][y][1] > 200 or image[x][y][2] > 200):
+                pixel_count += 1
+                
+            #is this pixel gray?
+            elif (abs(image[x][y][0]-image[x][y][1]) <= 15) and (abs(image[x][y][0]-image[x][y][2]) <= 15) and (abs(image[x][y][1]-image[x][y][2]) <= 15) :
+                pixel_count += 1
+                
+            else:
+                #pixel is likely sus
+                if DEBUG_FLAG:
+                    print("sus pixel at x:", x, "y:", y, "RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
+                
+                sus_count += 1
+                sumx +=x
+        
+    
+    # We haven't found white pixels
+    if sus_count <= 1: 
+        return -1
+    
+    if DEBUG_FLAG:
+        print("total sus pixels:", sus_count, "avg x coordinate: ", sumx/sus_count)
+    
+    # Otherwise return the average x-coordinate of the white pixels 
+    return (float(sumx) / sus_count)
 
 def getLidarReading():
     image = lidar.getRangeImage()
@@ -130,13 +175,17 @@ def main():
     
     min_x = NARROW_XMIN
     max_x = NARROW_XMAX
+    turning = False
     
-    driver.setCruisingSpeed(50)
+    driver.setCruisingSpeed(70)
 
     prev_x_coord = CAM_CENTER
+    obj_xcors = []
+
     
     while driver.step() != -1:
         count += 1
+            
         if count % 10 == 0:
             # accel_vals = accelerometer.getValues()
             # print(accel_vals)
@@ -146,35 +195,42 @@ def main():
             if DEBUG_FLAG:
                 print("speed", driver.getCurrentSpeed())
                 print("x-coord", x_coord)
+                
+                
             
             # can't find the line, slow down
             if x_coord == -1: 
+                turning = False
                 # 
                 driver.setBrakeIntensity(.3)
                 driver.setCruisingSpeed(15)
                 
                 # Really lost: can't find the line
-                if prev_x_coord == -1: 
+                #if prev_x_coord == -1: 
                      
-                    driver.setBrakeIntensity(.7)
-                    driver.setCruisingSpeed(1)
+                 #   driver.setBrakeIntensity(.7)
+                  #  driver.setCruisingSpeed(1)
                    
                 # Since we can't find the white line, widen search field
                 min_x = 0
                 max_x = CAM_WIDTH
                 
             else:
+                
                 # White line is in the center of our camera; we're going the right direction
                 if (x_coord > CAM_CENTER_MIN and x_coord < CAM_CENTER_MAX):
+                    turning = False
                     # Narrow search field, since we know where the white line is 
                     min_x = NARROW_XMIN
                     max_x = NARROW_XMAX
                     
                     if driver.getCurrentSpeed() < 30:
-                        driver.setCruisingSpeed(60)
+                        driver.setCruisingSpeed(70)
                         # Stop turning
                         driver.setSteeringAngle(0)
+                        driver.setBrakeIntensity(0)
                 else:
+                    turning = True
                     # We found the white line, and it's not in the center; we need to turn
                     min_x = 0
                     max_x = CAM_WIDTH
@@ -190,9 +246,10 @@ def main():
                     
                     if abs(steering_angle) > .1:
                         driver.setBrakeIntensity(.99)
+                        #driver.setBrakeIntensity(.8)
                         # print("hard brake")
-                    driver.setSteeringAngle(steering_angle)
-                    driver.setCruisingSpeed(20)
+                    driver.setSteeringAngle(steering_angle*0.75)
+                    driver.setCruisingSpeed(30)
                     # if abs(steering_angle) < .1:
                         # driver.setCruisingSpeed(40)
                    
@@ -211,9 +268,27 @@ def main():
                             if DEBUG_FLAG:
                                 print("Ending the turn early.")
                             break
-                    
+     
+        h_obj = objDetect()
+        
+        if h_obj == -1:
+            obj_xcors = []
+        else:
+            obj_xcors.append(h_obj)
+            
+        if (len(obj_xcors) >= 8) and (turning == False):
+            #check that all xcors are increasing or decreasing
+            if ((obj_xcors == sorted(obj_xcors)) or (obj_xcors == sorted(obj_xcors, reverse=True))) and (len(obj_xcors) == len(set(obj_xcors))):
+                #should be an object there!!
+                print(obj_xcors)
+                driver.setCruisingSpeed(0)
+                driver.setBrakeIntensity(1)
+                while h_obj != -1:
+                    driver.step()
+                    h_obj = objDetect()
             prev_x_coord = x_coord
             
+            #22.5 22.8 23.4444 24.0 24.3333
             
      
 
@@ -228,4 +303,3 @@ main()
      # pass
 
 # Enter here exit cleanup code.
-
