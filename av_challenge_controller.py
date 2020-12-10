@@ -34,8 +34,8 @@ CAM_CENTER = int(CAM_WIDTH/2)
 
 # Window: 8 pixels either side of center of frame 
 # used to detect if white line is in center of camera view
-CAM_CENTER_MIN = CAM_CENTER - 2
-CAM_CENTER_MAX = CAM_CENTER + 2
+CAM_CENTER_MIN = CAM_CENTER - 3
+CAM_CENTER_MAX = CAM_CENTER + 3
 
 # Window: 80 pixels around center 
 # used to look for white line if we think we know where it is
@@ -202,9 +202,10 @@ def main():
             # can't find the line, slow down
             if x_coord == -1: 
                 turning = False
+                driver.setBrakeIntensity(0)
                 # 
-                driver.setBrakeIntensity(.3)
-                driver.setCruisingSpeed(15)
+                #driver.setBrakeIntensity(.3)
+                driver.setCruisingSpeed(30)
                 
                 # Really lost: can't find the line
                 #if prev_x_coord == -1: 
@@ -225,11 +226,10 @@ def main():
                     min_x = NARROW_XMIN
                     max_x = NARROW_XMAX
                     
-                    if driver.getCurrentSpeed() < 30:
-                        driver.setCruisingSpeed(50)
-                        # Stop turning
-                        driver.setSteeringAngle(0)
-                        driver.setBrakeIntensity(0)
+                    driver.setCruisingSpeed(70)
+                    # Stop turning
+                    driver.setSteeringAngle(0)
+                    driver.setBrakeIntensity(0)
                 else:
                     turning = True
                     # We found the white line, and it's not in the center; we need to turn
@@ -269,6 +269,8 @@ def main():
                             if DEBUG_FLAG:
                                 print("Ending the turn early.")
                             break
+                            
+            prev_x_coord = x_coord
      
         h_obj = objDetect()
         # print(h_obj)
@@ -289,7 +291,7 @@ def main():
                 while h_obj != -1:
                     driver.step()
                     h_obj = objDetect()
-            prev_x_coord = x_coord
+            
             
             #22.5 22.8 23.4444 24.0 24.3333
             
