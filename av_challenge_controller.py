@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import numpy as np
 
-DEBUG_FLAG = True
+DEBUG_FLAG = False
 DEBUG_FLAG_OBJ = False
 
 driver = Driver()
@@ -15,6 +15,9 @@ timestep = int(driver.getBasicTimeStep())
 
 lidar = driver.getLidar('Sick LMS 291')
 lidar.enable(10)
+
+accelerometer = driver.getAccelerometer("accelerometer")
+accelerometer.enable(timestep)
 
 # accelerometer = driver.getAccelerometer("gyro")
 # accelerometer.enable(timestep)
@@ -145,28 +148,47 @@ def getLidarReading():
     left_clear = 0
     
     # 0-79 degrees: right side of image
-    for i in range(20, 79):
+    for i in range(0, 20):
         if image[i] > 15 and image[i] < 80: 
             right_clear += 1
+            print("right clear", image[i])
+        else:
+            print("right obstacle", image[i])
     # 79-100 degrees: center of image
-    for i in range(79, 100):
+    for i in range(85, 96):
         if image[i] > 15: 
             center_clear += 1
+            print("center clear", image[i])
+        else:
+            print("center obstacle", image[i])
     
     # 100 to 160 degrees: left side of image
-    for i in range (100, 160):
+    for i in range (160, 180):
         if image[i] > 15 and image[i] < 80: 
             left_clear += 1
+            print("left clear", image[i])
+        else:
+            print("left obstacle", image[i])
             
     if DEBUG_FLAG:
         print ("lidar results: center", center_clear, "right", right_clear, "left", left_clear)
-    if center_clear > 18:
+    if center_clear > 8:
         return "center"
     if right_clear > left_clear:
         return "right"
     else:
         return "left"
-        
+
+# Backs up without changing wheel angles
+def reverse():
+    while driver.getCurrentSpeed() > 0:
+        print ("trying to go backwards")
+        driver.setCruisingSpeed(-120)
+        print("speed:", driver.getCurrentSpeed())
+        driver.step()
+    for i in range(150):
+        driver.setCruisingSpeed(-20)
+        driver.step()
 
    
 def main():
@@ -186,10 +208,24 @@ def main():
     
     while driver.step() != -1:
         count += 1
+        
+        # Crash detection
+        accel_vals = accelerometer.getValues()
+        print(accel_vals, driver.getTargetCruisingSpeed(), driver.getBrakeIntensity(), count)
+        if (accel_vals[1] < -10 or accel_vals[0] < -10) and count > 10 and driver.getBrakeIntensity() < .1:
+            print("CRASH!?!?", accel_vals)
+            reverse()
+            
+        # Next: can we see the white line?
+        # No: use back-up cam to steer toward it in reverse
+        # Yes: Probably we hit an obstacle; back up and initiate obstacle avoidance
+        # (I may make the obstacle always purple so it's easy to find)
+        # Either using the avoiding object coming toward you method
+        # Or lidar
+        # Or look for black --> empty road w/o obstacle      
+               
             
         if count % 10 == 0:
-            # accel_vals = accelerometer.getValues()
-            # print(accel_vals)
             
             x_coord = line_angle(min_x, max_x)
             
@@ -226,7 +262,7 @@ def main():
                     min_x = NARROW_XMIN
                     max_x = NARROW_XMAX
                     
-                    driver.setCruisingSpeed(70)
+                    driver.setCruisingSpeed(60)
                     # Stop turning
                     driver.setSteeringAngle(0)
                     driver.setBrakeIntensity(0)
