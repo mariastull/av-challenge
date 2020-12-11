@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import numpy as np
 
-DEBUG_FLAG = False
+DEBUG_FLAG = True
 DEBUG_FLAG_OBJ = False
 
 driver = Driver()
@@ -28,29 +28,30 @@ front_camera = driver.getCamera("front_camera")
 front_camera.enable(10)
 #front_camera.recognitionEnable(10)
 
-back_camera = driver.getCamera("rear_camera")
-# back_camera.enable(30)
+# rear_camera = driver.getCamera("rear_camera")
+# rear_camera.enable(30)
 
 CAM_WIDTH = front_camera.getWidth()
 CAM_HEIGHT = front_camera.getHeight()
 CAM_CENTER = int(CAM_WIDTH/2)
-
-BACK_CAM_WIDTH = back_camera.getWidth()
-BACK_CAM_HEIGHT = back_camera.getHeight()
-BACK_CAM_CENTER = int(BACK_CAM_WIDTH/2)
 
 # Window: 8 pixels either side of center of frame 
 # used to detect if white line is in center of camera view
 CAM_CENTER_MIN = CAM_CENTER - 3
 CAM_CENTER_MAX = CAM_CENTER + 3
 
-BACK_CAM_CENTER_MIN = BACK_CAM_CENTER - 3
-BACK_CAM_CENTER_MAX = BACK_CAM_CENTER + 3
-
 # Window: 80 pixels around center 
 # used to look for white line if we think we know where it is
 NARROW_XMIN = CAM_CENTER - 40
 NARROW_XMAX = CAM_CENTER + 40
+
+#for when we messed up a turn and are just trying to find the line again
+LOST_XMIN = CAM_CENTER - 10
+LOST_XMAX = CAM_CENTER + 10
+
+#lidar for avoidance
+LIDAR_LT = 60
+LIDAR_RT = 115
 
 if DEBUG_FLAG:
     print("Camera dimensions", "width:", CAM_WIDTH, "height:", CAM_HEIGHT)
@@ -70,6 +71,11 @@ def line_angle(x_min, x_max, printall=False):
     
     green_sumx = 0
     green_count = 0
+    
+    maxX = -1*float("inf")
+    minX = float("inf")
+    maxY = -1*float("inf")
+    minY = float("inf")
    
     for x in range(0, CAM_WIDTH):
         # Only looking at bottom 1/3 of image 
@@ -82,6 +88,15 @@ def line_angle(x_min, x_max, printall=False):
                     print("white pixel at x:", x, "y:", y, "RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
                 sumx +=x
                 pixel_count += 1
+                
+                if x > maxX:
+                    maxX = x
+                if x < minX:
+                    minX = x
+                if y > maxY:
+                    maxY = y
+                if y < minY:
+                    minY = y
             
             # Looking for green pixels (finish line)
             if image[x][y][1] > 200 and image[x][y][0] < 100 and image[x][y][2] < 100:
@@ -101,61 +116,65 @@ def line_angle(x_min, x_max, printall=False):
     # We haven't found white pixels
     if pixel_count <= 1: 
         return -1
-    
-    if DEBUG_FLAG:
-        print("total white pixels:", pixel_count, "avg x coordinate: ", sumx/pixel_count)
-    
-    # Otherwise return the average x-coordinate of the white pixels 
-    return (float(sumx) / pixel_count)
-
-
-# Same as line_angle, but for the backup cam
-def backCamAngle():
-    image = back_camera.getImageArray()
-    
-    pixel_count = 0
-    sumx = 0
-    
-    green_sumx = 0
-    green_count = 0
-   
-    for x in range(0, BACK_CAM_WIDTH):
-        # Only looking at bottom 1/3 of image 
-        # where the road is likely to be and we have decent image fidelity
-        for y in range (int (2*BACK_CAM_HEIGHT/3), BACK_CAM_HEIGHT):
-            
-            # Is this pixel white?
-            if (image[x][y][0] + image[x][y][1] + image[x][y][2] > 350 ) and (image[x][y][0] > 200 or image[x][y][1] > 200 or image[x][y][2] > 200):
-                if DEBUG_FLAG:
-                    print("white pixel at x:", x, "y:", y, "RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
-                sumx +=x
-                pixel_count += 1
-            
-            # Looking for green pixels (finish line)
-            if image[x][y][1] > 200 and image[x][y][0] < 100 and image[x][y][2] < 100:
-                if DEBUG_FLAG:
-                    print("GREEN at x:", x, "y:", y ,"RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
-                green_sumx += x
-                green_count += 1
-    
-    # If we saw a lot of bright green pixels, we are approaching the finish line
-    # Aim for that
-    if green_count > 15:
-        if DEBUG_FLAG:
-            print("Green behind:", float(green_sumx)/green_count)
-        return float(green_sumx)/green_count
         
+    grey_count = 0
+    tot = 0
     
-    # We haven't found white pixels
-    if pixel_count <= 1: 
-        return -1
+    for i in range(minX, maxX+1):
+        for j in range(1,6):
+            try:
+                #look @ [i][maxY+j]
+                pix = image[i][maxY+j]
+                #is it grey?
+                if (abs(pix[0]-pix[1]) <= 15) and (abs(pix[0]-pix[2]) <= 15) and (abs(pix[1]-pix[2]) <= 15) :
+                    grey_count += 1
+                tot += 1
+            except:
+                pass
+            try:
+                #look @ [i][minY-j]
+                pix = image[i][minY-j]
+                #is it grey?
+                if (abs(pix[0]-pix[1]) <= 15) and (abs(pix[0]-pix[2]) <= 15) and (abs(pix[1]-pix[2]) <= 15) :
+                    grey_count += 1
+                    
+                tot += 1
+            except:
+                pass
+                
+            
+    for i in range(minY, maxY+1):
+        for j in range(1,6):
+            try:
+                #look @ [minX-j][i]
+                pix = image[minX-j][i]
+                #is it grey?
+                if (abs(pix[0]-pix[1]) <= 15) and (abs(pix[0]-pix[2]) <= 15) and (abs(pix[1]-pix[2]) <= 15) :
+                    grey_count += 1
+                tot += 1
+            except:
+                pass
+            try:
+                #look @ [maxX+j][i]
+                pix = image[maxX+j][i]
+                #is it grey?
+                if (abs(pix[0]-pix[1]) <= 15) and (abs(pix[0]-pix[2]) <= 15) and (abs(pix[1]-pix[2]) <= 15) :
+                    grey_count += 1
+                    
+                tot += 1
+            except:
+                pass
+                
     
     if DEBUG_FLAG:
         print("total white pixels:", pixel_count, "avg x coordinate: ", sumx/pixel_count)
+        print("percent surrounding that are grey:", float(grey_count)/tot)
     
+    if float(grey_count)/tot < 0.6:
+        #print('BAD LINE')
+        return -1
     # Otherwise return the average x-coordinate of the white pixels 
     return (float(sumx) / pixel_count)
-    
     
 def objDetect():
 
@@ -196,8 +215,22 @@ def objDetect():
     
     # Otherwise return the average x-coordinate of the white pixels 
     return (float(sumx) / sus_count)
+    
+def getLidarReading(thresh):
+    image = lidar.getRangeImage()
+    center_clear = 0
+    right_clear = 0
+    left_clear = 0
+    
+    pings = []
+            
+    for i in range(LIDAR_LT, LIDAR_RT):
+        if image[i] < thresh:
+            pings.append(i)
+            
+    return pings
 
-def getLidarReading():
+def getLidarReadingOld():
     image = lidar.getRangeImage()
     center_clear = 0
     right_clear = 0
@@ -235,110 +268,18 @@ def getLidarReading():
     else:
         return "left"
 
-def killSpeed():
-    while driver.getCurrentSpeed() > 0:
-        print ("trying to go backwards")
-        driver.setCruisingSpeed(-120)
-        print("speed:", driver.getCurrentSpeed())
-        driver.step()
-
 # Backs up without changing wheel angles
 def reverse():
-    print("Reverse straight back")
-    killSpeed()
+    while driver.getCurrentSpeed() > 0:
+        #print ("trying to go backwards")
+        driver.setCruisingSpeed(-120)
+        #print("speed:", driver.getCurrentSpeed())
+        driver.step()
     for i in range(150):
         driver.setCruisingSpeed(-20)
         driver.step()
 
-def reverseWithBackup():
-    print("Using back-up cam")
-    back_camera.enable(10)
-    killSpeed()
-    driver.setCruisingSpeed(-20)
-    for i in range(50):
-        driver.step()
-    for i in range(10):
-        back_angle = backCamAngle()
-        
-        if back_angle == -1:
-            reverse()
-            return
-        
-        if back_angle > BACK_CAM_CENTER_MIN and back_angle < BACK_CAM_CENTER_MAX:
-            driver.setSteeringAngle(0)
-        
-        else:
-            # *0.75 to dampen the turn, *-1 because we're in reverse
-            steering_angle = -.75 * ((back_angle - BACK_CAM_CENTER) / (BACK_CAM_WIDTH/2) / (3.1415/2))
-            driver.setSteeringAngle(steering_angle)
-        
-        driver.setCruisingSpeed(-30)
-        
-        for i in range(5):
-            for i in range(5):
-                driver.step()
-            new_angle = backCamAngle()
-            if new_angle < BACK_CAM_CENTER_MAX and new_angle > BACK_CAM_CENTER_MIN:
-                if DEBUG_FLAG:
-                    print("Ending the turn early.")
-                break
-        
-        if line_angle(0, 256) != -1:
-            break
-    back_camera.disable()
-
-def suddenStop(count, accel_vals, prev_accel_vals):
-    # This is probably just athe initial startup
-    if count < 10:
-        return False
-    
-    if accel_vals[0] < -20:
-        if abs(accel_vals[0] - prev_accel_vals[0]) < 6:
-            return False
-        return True
-    
-    if accel_vals[1] < -20:
-        if abs(accel_vals[1] - prev_accel_vals[1]) < 6:
-            return False
-        return True
-    
-    if driver.getBrakeIntensity() > .9:
-        return False
-    
-    # we have slowed down a lot!
-    
-    if accel_vals[0] < -5:
-    
-        # This isn't sudden
-        if abs(accel_vals[0] - prev_accel_vals[0]) < 6:
-            return False
-        
-        # We just stopped braking; momentum may be carrying us backwards
-        if driver.getBrakeIntensity() < .1 and prev_accel_vals[3] == 1:
-            return False
-            
-        # We just started braking; ignore 
-        if driver.getBrakeIntensity() > .1 and prev_accel_vals[3] == 0:
-            return False
-        
-        return True
-
-    if accel_vals[1] < -5:
-        if abs(accel_vals[1] - prev_accel_vals[1]) < 6:
-            return False
-        
-        # We just stopped braking; momentum may be carrying us backwards
-        if driver.getBrakeIntensity() < .1 and prev_accel_vals[3] == 1:
-            return False
-            
-        # We just started braking; ignore 
-        if driver.getBrakeIntensity() > .1 and prev_accel_vals[3] == 0:
-            return False
-        
-        return True
-        
-    return False
-
+   
 def main():
 
     count = 0
@@ -347,13 +288,12 @@ def main():
     max_x = NARROW_XMAX
     turning = False
     
-    driver.setCruisingSpeed(70)
+    driver.setCruisingSpeed(60)
 
     x_coord = CAM_CENTER
     prev_x_coord = CAM_CENTER
     obj_xcors = []
-    
-    prev_accel_vals = accelerometer.getValues()
+    last_coords = [CAM_CENTER, CAM_CENTER, CAM_CENTER]
 
     
     while driver.step() != -1:
@@ -361,21 +301,11 @@ def main():
         
         # Crash detection
         accel_vals = accelerometer.getValues()
-        print(accel_vals, driver.getTargetCruisingSpeed(), driver.getBrakeIntensity(), count)
-        if suddenStop(count, accel_vals, prev_accel_vals):
-        # count > 10 and ((driver.getBrakeIntensity() < .1 and prev_accel_vals[3] != 1) or driver.getBrakeIntensity() > .1 and prev_accel_vals[3] == 1)((accel_vals[1] < -5 and abs(accel_vals[1]-prev_accel_vals[1]) > 2) or accel_vals[0] < -5 and abs(accel_vals[0]-prev_accel_vals[0]) > 2): 
-        # if ((accel_vals[1] < -5 or accel_vals[0] < -5) and count > 10 and driver.getBrakeIntensity() < .1) or (accel_vals[1] < -12 or accel_vals[0] < -12) and count > 10:
-            print("CRASH!?!?", accel_vals)
-            killSpeed()
-            if line_angle(0, CAM_WIDTH) == -1:
-                reverseWithBackup()
-            else:
-                reverse()
-        prev_accel_vals = accel_vals
-        if driver.getBrakeIntensity() > .1:
-            prev_accel_vals.append(1)
-        else:
-            prev_accel_vals.append(0)
+        #print(accel_vals, driver.getTargetCruisingSpeed(), driver.getBrakeIntensity(), count)
+        if (accel_vals[1] < -10 or accel_vals[0] < -10) and count > 10 and driver.getBrakeIntensity() < .1:
+            if DEBUG_FLAG:
+                print("CRASH!?!?", accel_vals)
+            reverse()
             
         # Next: can we see the white line?
         # No: use back-up cam to steer toward it in reverse
@@ -390,12 +320,39 @@ def main():
             
             x_coord = line_angle(min_x, max_x)
             
+            last_coords.append(x_coord)
+            
+            last_coords = last_coords[1:]
+            
+            #print(x_coord)
+            
             if DEBUG_FLAG:
                 print("speed", driver.getCurrentSpeed())
                 print("x-coord", x_coord)
                 
                 
-            
+            curr_angle = driver.getSteeringAngle()
+            if (sum(last_coords) == len(last_coords)*-1) and (abs(curr_angle) > 0.05) and (abs(curr_angle) < 0.1):
+                
+                print('should be turning harder here')
+                print(curr_angle, turning)
+                driver.setSteeringAngle(curr_angle * 5)
+                new_angle = line_angle(0, CAM_WIDTH)
+                while not(new_angle < LOST_XMAX and new_angle > LOST_XMIN): #still havent found line
+                    print(new_angle, 'is not less than', LOST_XMAX, 'and greater than', LOST_XMIN)
+                    driver.step()
+                    new_angle = line_angle(0, CAM_WIDTH)
+                    print('still looking for the line!!!')
+ 
+                print('found line!!!', new_angle)
+                driver.setSteeringAngle(0)
+                for i in range(10):
+                    driver.step()
+                    print('going fwd now')
+                
+                    
+                        
+                x_coord = line_angle(min_x, max_x)
             # can't find the line, slow down
             if x_coord == -1: 
                 turning = False
@@ -418,6 +375,7 @@ def main():
                 
                 # White line is in the center of our camera; we're going the right direction
                 if (x_coord > CAM_CENTER_MIN and x_coord < CAM_CENTER_MAX):
+                    #print('maybe narrowing is bad?')
                     turning = False
                     # Narrow search field, since we know where the white line is 
                     min_x = NARROW_XMIN
@@ -467,6 +425,7 @@ def main():
                                 print("Ending the turn early.")
                             break
                             
+                            
             prev_x_coord = x_coord
      
         h_obj = objDetect()
@@ -488,6 +447,20 @@ def main():
                 while h_obj != -1:
                     driver.step()
                     h_obj = objDetect()
+                    
+        li = getLidarReading(8)
+        li = [i for i in li if i >= 75 and i <= 105]
+        
+        if(len(li) > 0) and (turning == False):
+            obj_locs.append(np.mean(li))
+        else:
+            obj_locs = []
+            
+        #if (len(obj_locs) >= 5) and (abs(driver.getSteeringAngle()) < 0.1):
+         #   print('too sensitive!!!')
+          #  print(driver.getSteeringAngle())
+          #  print(obj_locs)
+            #slalom(obj_locs)
             
             
             #22.5 22.8 23.4444 24.0 24.3333
