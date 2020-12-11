@@ -5,9 +5,10 @@ from vehicle import Driver
 import warnings
 warnings.filterwarnings("ignore")
 import numpy as np
+from scipy.stats import linregress
 
-DEBUG_FLAG = True
-DEBUG_FLAG_OBJ = False
+DEBUG_FLAG = False
+DEBUG_FLAG_OBJ = True
 
 driver = Driver()
 
@@ -28,18 +29,12 @@ front_camera = driver.getCamera("front_camera")
 front_camera.enable(10)
 #front_camera.recognitionEnable(10)
 
-back_camera = driver.getCamera("rear_camera")
-
 # rear_camera = driver.getCamera("rear_camera")
 # rear_camera.enable(30)
 
 CAM_WIDTH = front_camera.getWidth()
 CAM_HEIGHT = front_camera.getHeight()
 CAM_CENTER = int(CAM_WIDTH/2)
-
-BACK_CAM_WIDTH = back_camera.getWidth()
-BACK_CAM_HEIGHT = back_camera.getHeight()
-BACK_CAM_CENTER = int(BACK_CAM_WIDTH/2)
 
 # Window: 8 pixels either side of center of frame 
 # used to detect if white line is in center of camera view
@@ -51,16 +46,13 @@ CAM_CENTER_MAX = CAM_CENTER + 3
 NARROW_XMIN = CAM_CENTER - 40
 NARROW_XMAX = CAM_CENTER + 40
 
-BACK_CAM_CENTER_MIN = BACK_CAM_CENTER - 3
-BACK_CAM_CENTER_MAX = BACK_CAM_CENTER + 3
-
 #for when we messed up a turn and are just trying to find the line again
 LOST_XMIN = CAM_CENTER - 10
 LOST_XMAX = CAM_CENTER + 10
 
 #lidar for avoidance
-LIDAR_LT = 60
-LIDAR_RT = 115
+LIDAR_LT = CAM_CENTER - 15
+LIDAR_RT = CAM_CENTER + 15
 
 if DEBUG_FLAG:
     print("Camera dimensions", "width:", CAM_WIDTH, "height:", CAM_HEIGHT)
@@ -192,6 +184,7 @@ def objDetect():
     pixel_count = 0
     sus_count = 0
     sumx = 0
+    sumy = 0
    
     for x in range(22, 113):
         # Only looking at bottom 1/3 of image 
@@ -203,27 +196,28 @@ def objDetect():
                 pixel_count += 1
                 
             #is this pixel gray?
-            elif (abs(image[x][y][0]-image[x][y][1]) <= 15) and (abs(image[x][y][0]-image[x][y][2]) <= 15) and (abs(image[x][y][1]-image[x][y][2]) <= 15) :
+            elif (abs(image[x][y][0]-image[x][y][1]) <= 20) and (abs(image[x][y][0]-image[x][y][2]) <= 20) and (abs(image[x][y][1]-image[x][y][2]) <= 20) :
                 pixel_count += 1
                 
             else:
                 #pixel is likely sus
-                if DEBUG_FLAG_OBJ:
+                if DEBUG_FLAG:
                     print("sus pixel at x:", x, "y:", y, "RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
                 
                 sus_count += 1
                 sumx +=x
+                sumy += y
         
     
-    # We haven't found white pixels
+    # We haven't found sus pixels
     if sus_count <= 1: 
-        return -1
+        return -1, -1;
     
-    if DEBUG_FLAG_OBJ:
+    if DEBUG_FLAG:
         print("total sus pixels:", sus_count, "avg x coordinate: ", sumx/sus_count)
     
     # Otherwise return the average x-coordinate of the white pixels 
-    return (float(sumx) / sus_count)
+    return (float(sumx) / sus_count), (float(sumy) / sus_count);
     
 def getLidarReading(thresh):
     image = lidar.getRangeImage()
@@ -277,164 +271,18 @@ def getLidarReadingOld():
     else:
         return "left"
 
-# Same as line_angle, but for the backup cam
-def backCamAngle():
-    image = back_camera.getImageArray()
-    
-    pixel_count = 0
-    sumx = 0
-    
-    green_sumx = 0
-    green_count = 0
-   
-    for x in range(0, BACK_CAM_WIDTH):
-        # Only looking at bottom 1/3 of image 
-        # where the road is likely to be and we have decent image fidelity
-        for y in range (int (2*BACK_CAM_HEIGHT/3), BACK_CAM_HEIGHT):
-            
-            # Is this pixel white?
-            if (image[x][y][0] + image[x][y][1] + image[x][y][2] > 350 ) and (image[x][y][0] > 200 or image[x][y][1] > 200 or image[x][y][2] > 200):
-                if DEBUG_FLAG:
-                    print("white pixel at x:", x, "y:", y, "RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
-                sumx +=x
-                pixel_count += 1
-            
-            # Looking for green pixels (finish line)
-            if image[x][y][1] > 200 and image[x][y][0] < 100 and image[x][y][2] < 100:
-                if DEBUG_FLAG:
-                    print("GREEN at x:", x, "y:", y ,"RGB:", image[x][y][0], image[x][y][1], image[x][y][2])
-                green_sumx += x
-                green_count += 1
-    
-    # If we saw a lot of bright green pixels, we are approaching the finish line
-    # Aim for that
-    if green_count > 15:
-        if DEBUG_FLAG:
-            print("Green behind:", float(green_sumx)/green_count)
-        return float(green_sumx)/green_count
-        
-    
-    # We haven't found white pixels
-    if pixel_count <= 1: 
-        return -1
-    
-    if DEBUG_FLAG:
-        print("total white pixels:", pixel_count, "avg x coordinate: ", sumx/pixel_count)
-    
-    # Otherwise return the average x-coordinate of the white pixels 
-    return (float(sumx) / pixel_count)
-
-def killSpeed():
-    driver.setCruisingSpeed(-120)
-    while driver.getCurrentSpeed() > 0:
-        print("slowing down; speed:", driver.getCurrentSpeed())
-        for i in range(5):
-            driver.step()
-
+# Backs up without changing wheel angles
 def reverse():
-    print("Reverse straight back")
-    killSpeed()
-    for i in range(100):
+    while driver.getCurrentSpeed() > 0:
+        #print ("trying to go backwards")
+        driver.setCruisingSpeed(-120)
+        #print("speed:", driver.getCurrentSpeed())
+        driver.step()
+    for i in range(150):
         driver.setCruisingSpeed(-20)
         driver.step()
 
-def reverseWithBackup():
-    print("Using back-up cam")
-    back_camera.enable(10)
-    killSpeed()
-    driver.setCruisingSpeed(-20)
-    for i in range(50):
-        driver.step()
-    for i in range(10):
-        back_angle = backCamAngle()
-        
-        if back_angle == -1:
-            back_angle = BACK_CAM_CENTER
-        
-        if back_angle > BACK_CAM_CENTER_MIN and back_angle < BACK_CAM_CENTER_MAX:
-            driver.setSteeringAngle(0)
-        
-        else:
-            # *0.75 to dampen the turn, *-1 because we're in reverse
-            steering_angle = -.75 * ((back_angle - BACK_CAM_CENTER) / (BACK_CAM_WIDTH/2) / (3.1415/2))
-            driver.setSteeringAngle(steering_angle)
-        
-        driver.setCruisingSpeed(-30)
-        
-        for i in range(5):
-            for i in range(5):
-                driver.step()
-            new_angle = backCamAngle()
-            if new_angle < BACK_CAM_CENTER_MAX and new_angle > BACK_CAM_CENTER_MIN:
-                if DEBUG_FLAG:
-                    print("Ending the turn early.")
-                break
-        
-        if line_angle(0, 256) != -1:
-            break
-    back_camera.disable()
-
-
-def suddenStop(count, accel_vals, prev_accel_vals):
-    # We've just started; who knows what our acceleration should be?
-    # Maybe someone who knows anything about physics
-    if count < 10:
-        return False
-    
-    # Big suddden crash -- this is probably? a crash even if we applied the brakes
-    if accel_vals[0] < -20:
-        if abs(accel_vals[0] - prev_accel_vals[0]) < 6:
-            return False
-        return True
-    
-    if accel_vals[1] < -20:
-        if abs(accel_vals[1] - prev_accel_vals[1]) < 6:
-            return False
-        return True
-    
-    if driver.getBrakeIntensity() > .9:
-        return False
-    
-    # we have slowed down a lot!
-    
-    if accel_vals[0] < -5:
-    
-        # This isn't sudden, we were already slowing down
-        if abs(accel_vals[0] - prev_accel_vals[0]) < 6:
-            return False
-        
-        # We just stopped braking; momentum may be carrying us backwards
-        if driver.getBrakeIntensity() < .1 and prev_accel_vals[3] == 1:
-            return False
-            
-        # We just started braking; ignore 
-        if driver.getBrakeIntensity() > .1 and prev_accel_vals[3] == 0:
-            return False
-        
-        return True
-
-    if accel_vals[1] < -5:
-        if abs(accel_vals[1] - prev_accel_vals[1]) < 6:
-            return False
-        
-        # We just stopped braking; momentum may be carrying us backwards
-        if driver.getBrakeIntensity() < .1 and prev_accel_vals[3] == 1:
-            return False
-            
-        # We just started braking; ignore 
-        if driver.getBrakeIntensity() > .1 and prev_accel_vals[3] == 0:
-            return False
-        
-        return True
-        
-    return False
    
-def killSpeedFwd():
-    driver.setCruisingSpeed(50)
-    while driver.getCurrentSpeed() < 0:
-        for i in range(5):
-            driver.step()
-
 def main():
 
     count = 0
@@ -448,34 +296,20 @@ def main():
     x_coord = CAM_CENTER
     prev_x_coord = CAM_CENTER
     obj_xcors = []
+    obj_ycors = []
     last_coords = [CAM_CENTER, CAM_CENTER, CAM_CENTER]
-    
-    prev_accel_vals = accelerometer.getValues()
 
     
     while driver.step() != -1:
         count += 1
         
-        accel_vals = accelerometer.getValues()
-        # print(accel_vals, driver.getTargetCruisingSpeed(), driver.getBrakeIntensity(), count)
-        
         # Crash detection
-        if suddenStop(count, accel_vals, prev_accel_vals):
-            print("CRASH!?!?", accel_vals)
-            killSpeed()
-            back_camera.enable(10)
-            if backCamAngle() != -1:
-                reverseWithBackup()
-            else:
-                reverse()
-            back_camera.disable()
-            killSpeedFwd()
-            
-        prev_accel_vals = accel_vals
-        if driver.getBrakeIntensity() > .1:
-            prev_accel_vals.append(1)
-        else:
-            prev_accel_vals.append(0)
+        accel_vals = accelerometer.getValues()
+        #print(accel_vals, driver.getTargetCruisingSpeed(), driver.getBrakeIntensity(), count)
+        if (accel_vals[1] < -10 or accel_vals[0] < -10) and count > 10 and driver.getBrakeIntensity() < .1:
+            if DEBUG_FLAG:
+                print("CRASH!?!?", accel_vals)
+            reverse()
             
         # Next: can we see the white line?
         # No: use back-up cam to steer toward it in reverse
@@ -499,11 +333,9 @@ def main():
             if DEBUG_FLAG:
                 print("speed", driver.getCurrentSpeed())
                 print("x-coord", x_coord)
-                print("last coords", last_coords)
                 
                 
             curr_angle = driver.getSteeringAngle()
-            print(sum(last_coords), len(last_coords), curr_angle)
             if (sum(last_coords) == len(last_coords)*-1) and (abs(curr_angle) > 0.05) and (abs(curr_angle) < 0.1):
                 
                 print('should be turning harder here')
@@ -521,14 +353,10 @@ def main():
                 for i in range(10):
                     driver.step()
                     print('going fwd now')
+                
+                    
                         
                 x_coord = line_angle(min_x, max_x)
-            elif (sum(last_coords) == len(last_coords)*-1) and abs(curr_angle) > 0.1:
-                driver.setSteeringAngle(1.5 * curr_angle)
-                for i in range(15):
-                    driver.step()
-                driver.setSteeringAngle(curr_angle)
-                
             # can't find the line, slow down
             if x_coord == -1: 
                 turning = False
@@ -604,42 +432,71 @@ def main():
                             
             prev_x_coord = x_coord
      
-        h_obj = objDetect()
-        # print(h_obj)
+        h_obj, v_obj = objDetect()
+        
+        if DEBUG_FLAG:
+            print('object detection x:',obj_xcors)
+            print('object detection y:', obj_ycors)
         
         if h_obj == -1:
             obj_xcors = []
+            obj_ycors = []
         else:
             obj_xcors.append(h_obj)
+            obj_ycors.append(v_obj)
             
-        if (len(obj_xcors) >= 8) and (turning == False):
+        if (len(obj_xcors) > 10) and (turning == False):
+            if DEBUG_FLAG:
+                print('have seen sus pixels for 8 frames now, may be an obstacle')
             #check that all xcors are increasing or decreasing
-            if ((obj_xcors == sorted(obj_xcors)) or (obj_xcors == sorted(obj_xcors, reverse=True))) and (len(obj_xcors) == len(set(obj_xcors))):
-                print("object detected")
-                #should be an object there!!
-                print(obj_xcors)
-                driver.setCruisingSpeed(0)
-                driver.setBrakeIntensity(1)
-                while h_obj != -1:
-                    driver.step()
-                    h_obj = objDetect()
+            #if the object is super slow, or our camera is noisy, or it its too small, the xvals may fluctuate
+            #so round everything
+            rounded_xcors = [int(i) for i in obj_xcors][-8:]
+            rounded_ycors = [int(i) for i in obj_ycors][-8:]
+            #print(rounded_xcors)
+            if ((rounded_xcors == sorted(rounded_xcors)) or (rounded_xcors == sorted(rounded_xcors, reverse=True))):
+                slope, intercept, r_value, p_value, std_err = linregress(obj_xcors[-4:],obj_ycors[-4:])
+                if DEBUG_FLAG_OBJ:
+                    print("object detected! line: y = %fx + %f" %(slope, intercept))
+                    #print(std_err)
+                    #should be an object there!!
+                    #print(obj_xcors)
+                #where will the obj be when it is close to the car?
+                loc = [(i*slope) + intercept for i in range(50,65)]
+                
+                l_bound = int(CAM_WIDTH/3)
+                r_bound = l_bound*2
+                
+                num_bad = len([i for i in loc if i >= l_bound and i <= r_bound])
+                
+                if DEBUG_FLAG_OBJ:
+                    print(num_bad, 'of %i total close points will be close to the car!' %len(loc))
+                
+                if num_bad >= 1:
+                    if loc[0] < loc[-1]:
+                        #print('we must turn left')
+                        driver.setSteeringAngle(-0.07)
+                    else:
+                        #print('we must turn right')
+                        driver.setSteeringAngle(0.07)
+                    #try to get around   
+                    for i in range(100):
+                        driver.step()
+                    driver.setSteeringAngle(-0.9*driver.getSteeringAngle())
+                    for i in range(100):
+                            driver.step()
+                    driver.setSteeringAngle(0)
+                    #driver.setCruisingSpeed(0)
+                    #driver.setBrakeIntensity(1)
+                    print('stopped!')
+                count = count/10*10
+                obj_xcors = []
+                obj_ycors = []
+                #while h_obj != -1:
+                 #   driver.step()
+                  #  h_obj = objDetect()
                     
-        li = getLidarReading(8)
-        li = [i for i in li if i >= 75 and i <= 105]
         
-        if(len(li) > 0) and (turning == False):
-            obj_locs.append(np.mean(li))
-        else:
-            obj_locs = []
-            
-        #if (len(obj_locs) >= 5) and (abs(driver.getSteeringAngle()) < 0.1):
-         #   print('too sensitive!!!')
-          #  print(driver.getSteeringAngle())
-          #  print(obj_locs)
-            #slalom(obj_locs)
-            
-            
-            #22.5 22.8 23.4444 24.0 24.3333
             
      
 
