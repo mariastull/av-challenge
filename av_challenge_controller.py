@@ -572,13 +572,18 @@ def main():
     x_coord = CAM_CENTER
     prev_x_coord = CAM_CENTER
     obj_xcors = []
-    last_coords = [CAM_CENTER, CAM_CENTER, CAM_CENTER]
+    last_coords = [CAM_CENTER, CAM_CENTER, CAM_CENTER, CAM_CENTER]
     
     prev_accel_vals = accelerometer.getValues()
+    
+    frames = []
 
     
     while driver.step() != -1:
+          
         count += 1
+        
+        
         
         accel_vals = accelerometer.getValues()
         # print(accel_vals, driver.getTargetCruisingSpeed(), driver.getBrakeIntensity(), count)
@@ -652,7 +657,7 @@ def main():
                     print('going fwd now')
                         
                 x_coord = line_angle(min_x, max_x)
-            elif (sum(last_coords) == len(last_coords)*-1) and abs(curr_angle) > 0.1:
+            elif (sum(last_coords) == len(last_coords)*-1) and abs(curr_angle) > 0.1 and abs(curr_angle) < 0.3:
                 driver.setSteeringAngle(1.5 * curr_angle)
                 for i in range(15):
                     driver.step()
@@ -732,7 +737,7 @@ def main():
                             
                             
             prev_x_coord = x_coord
-     
+            
         h_obj = objDetect()
         # print(h_obj)
         
@@ -760,6 +765,17 @@ def main():
             obj_locs.append(np.mean(li))
         else:
             obj_locs = []
+            
+        #if (len(obj_locs) >= 5) and (abs(driver.getSteeringAngle()) < 0.1):
+         #   print('too sensitive!!!')
+          #  print(driver.getSteeringAngle())
+          #  print(obj_locs)
+            #slalom(obj_locs)
+            
+            
+            #22.5 22.8 23.4444 24.0 24.3333
+     
+        
             
         #if (len(obj_locs) >= 5) and (abs(driver.getSteeringAngle()) < 0.1):
          #   print('too sensitive!!!')
