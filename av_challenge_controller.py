@@ -753,7 +753,8 @@ def main():
             
         if (len(obj_xcors) >= 8) and (turning == False):
             #check that all xcors are increasing or decreasing
-            if ((obj_xcors == sorted(obj_xcors)) or (obj_xcors == sorted(obj_xcors, reverse=True))) and (len(obj_xcors) == len(set(obj_xcors))):
+            check = [int(i) for i in obj_xcors]
+            if ((check == sorted(check)) or (check == sorted(check, reverse=True))) and (len(obj_xcors) == len(set(obj_xcors))):
                 if DEBUG_FLAG:
                     print("object detected")
                     #should be an object there!!
