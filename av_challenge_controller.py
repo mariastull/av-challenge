@@ -192,6 +192,7 @@ def objDetect():
     pixel_count = 0
     sus_count = 0
     sumx = 0
+    sumy = 0
    
     for x in range(22, 113):
         # Only looking at bottom 1/3 of image 
@@ -213,6 +214,7 @@ def objDetect():
                 
                 sus_count += 1
                 sumx +=x
+                sumy += y
         
     
     # We haven't found white pixels
@@ -223,7 +225,7 @@ def objDetect():
         print("total sus pixels:", sus_count, "avg x coordinate: ", sumx/sus_count)
     
     # Otherwise return the average x-coordinate of the white pixels 
-    return (float(sumx) / sus_count)
+    return (float(sumx) / sus_count), (float(sumy) / sus_count);
     
 def getLidarReading(thresh):
     image = lidar.getRangeImage()
@@ -572,6 +574,7 @@ def main():
     x_coord = CAM_CENTER
     prev_x_coord = CAM_CENTER
     obj_xcors = []
+    obj_ycors = []
     last_coords = [CAM_CENTER, CAM_CENTER, CAM_CENTER, CAM_CENTER]
     
     prev_accel_vals = accelerometer.getValues()
@@ -738,53 +741,38 @@ def main():
                             
             prev_x_coord = x_coord
             
-        h_obj = objDetect()
+        h_obj, v_obj = objDetect()
         # print(h_obj)
         
         if h_obj == -1:
             obj_xcors = []
+            obj_ycors = []
         else:
             obj_xcors.append(h_obj)
+            obj_ycors.append(v_obj)
             
         if (len(obj_xcors) >= 8) and (turning == False):
             #check that all xcors are increasing or decreasing
             if ((obj_xcors == sorted(obj_xcors)) or (obj_xcors == sorted(obj_xcors, reverse=True))) and (len(obj_xcors) == len(set(obj_xcors))):
-                print("object detected")
-                #should be an object there!!
-                print(obj_xcors)
-                driver.setCruisingSpeed(0)
-                driver.setBrakeIntensity(1)
-                while h_obj != -1:
-                    driver.step()
-                    h_obj = objDetect()
+                if DEBUG_FLAG:
+                    print("object detected")
+                    #should be an object there!!
+                    print(obj_xcors)
+                #horizontally moving    
+                if max(obj_ycors) - min(obj_ycors) <= 6:
+                    driver.setCruisingSpeed(0)
+                    driver.setBrakeIntensity(1)
+                    while h_obj != -1:
+                        driver.step()
+                        h_obj = objDetect()
+                        
+                #vertically moving
+                else:
+                    sillyObjectAvoidance()
                     
-        li = getLidarReading(8)
-        li = [i for i in li if i >= 75 and i <= 105]
-        
-        if(len(li) > 0) and (turning == False):
-            obj_locs.append(np.mean(li))
-        else:
-            obj_locs = []
-            
-        #if (len(obj_locs) >= 5) and (abs(driver.getSteeringAngle()) < 0.1):
-         #   print('too sensitive!!!')
-          #  print(driver.getSteeringAngle())
-          #  print(obj_locs)
-            #slalom(obj_locs)
-            
-            
-            #22.5 22.8 23.4444 24.0 24.3333
-     
-        
-            
-        #if (len(obj_locs) >= 5) and (abs(driver.getSteeringAngle()) < 0.1):
-         #   print('too sensitive!!!')
-          #  print(driver.getSteeringAngle())
-          #  print(obj_locs)
-            #slalom(obj_locs)
-            
-            
-            #22.5 22.8 23.4444 24.0 24.3333
+                obj_xcors = []
+                obj_ycors = []
+       
             
      
 
